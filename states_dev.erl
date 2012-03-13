@@ -11,7 +11,6 @@
 
 -include_lib("acnet/include/acnet.hrl").
 -include_lib("daq/include/devices.hrl").
--include_lib("daq/include/retdat_protocol.hrl").
 -include_lib("daq/include/setdat_protocol.hrl").
 
 -export([start/1]).
@@ -70,17 +69,25 @@ set_states(#setdat_1device{di=DI, settingdata= <<Val:16/little>>, ssdn= << _:32,
 	?ERR_READTMO
     end.
 
-read_states(#retdat_1device{di=DI}, #aux_spec{shared=Pid}) ->
+read_states(#device_request{di=DI}, #aux_spec{shared=Pid,trigger=SE}) ->
     Pid ! { self(), read, DI },
     receive
 	{ok, Val} ->
-	    [?ACNET_SUCCESS, <<Val:16/little>>];
+	    #device_reply{status=?ACNET_SUCCESS,
+		  stamp = SE#sync_event.stamp,
+		  data = <<Val:16/little>>};
 	{error, not_found} ->
-	    [?ERR_UPDATE, <<0,0>>];
+	    #device_reply{status=?ERR_UPDATE,
+		  stamp = SE#sync_event.stamp,
+		  data = <<0,0>>};
 	{error, illegal_value} ->
-	    [?ERR_UPDATE, <<0,0>>]
+	    #device_reply{status=?ERR_UPDATE,
+		  stamp = SE#sync_event.stamp,
+		  data = <<0,0>>}
     after 100 ->
-	[?ERR_READTMO, <<0,0>>]
+	    #device_reply{status=?ERR_READTMO,
+		  stamp = SE#sync_event.stamp,
+		  data = <<0,0>>}
     end.
 
 start(Oid) ->
