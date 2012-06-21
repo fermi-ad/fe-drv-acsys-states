@@ -14,7 +14,9 @@
 -include_lib("daq/include/setdat_protocol.hrl").
 
 -export([start/1]).
--export([init_task/0]).
+-export([init_task/0, init_fsmset/1]).
+
+-import(error_logger, [info_msg/1, info_msg/2]).
 
 -define(ATOMIC_SIZE,2).
 
@@ -52,6 +54,38 @@ loop(Tid, S, Seq) ->
 	    loop(Tid, S, Seq)
     end.
 
+set_dev(Pid, DI, V, Min, Max) ->
+    Pid ! { self(), set, DI, V, Min, Max },
+    receive
+	ok -> ?ACNET_SUCCESS;
+	{error, _} -> ?ACNET_INVARG
+    after 100 -> ?ERR_READTMO
+    end.
+
+%%% Main loop for FSMSET.
+
+devs(Bin) ->
+    [{DI, V} || <<DI:32/little, V:16/little>> <- Bin].
+
+fsmset(Pid) ->
+    catch receive
+	      #acnet_request{ref=RpyId, mult=false,
+			     data= <<10:16/little, Count:16/little, _:48,
+				     Rest/binary>>}
+		when size(Rest) == Count * 6 ->
+		  lists:foreach(fun ({DI, V}) ->
+					set_dev(Pid, DI, V, -16#8000, 16#7fff)
+				end, devs(Rest)),
+		  acnet:send_last_reply(RpyId, ?ACNET_SUCCESS, <<>>);
+
+	      #acnet_request{ref=RpyId, mult=true} = Req ->
+		  info_msg("Bad request: ~p.~n", [Req]),
+		  acnet:send_last_reply(RpyId, ?ACNET_BADREQ, <<>>);
+
+	      _ -> ok
+	  end,
+    fsmset(Pid).
+
 %%% Creates the table and enters an infinite loop.
 
 init_task() ->
@@ -59,15 +93,15 @@ init_task() ->
     {ok, S} = gen_udp:open(0),
     loop(ets:new(stateDevTable, [set, private]), S, 0).
 
-set_states(#setdat_1device{di=DI, settingdata= <<Val:16/little>>, ssdn= << _:32, Min:16/little, Max:16/little>>},
+init_fsmset(Pid) ->
+    acnet:start(fsmset),
+    acnet:accept_requests(fsmset),
+    fsmset(Pid).
+
+set_states(#setdat_1device{di=DI, settingdata= <<Val:16/little>>,
+			   ssdn= << _:32, Min:16/little, Max:16/little>>},
 	   #aux_spec{shared=Pid}) ->
-    Pid ! { self(), set, DI, Val, Min, Max },
-    receive
-	ok ->
-	    ?ACNET_SUCCESS
-    after 100 ->
-	?ERR_READTMO
-    end.
+    set_dev(Pid, DI, Val, Min, Max).
 
 read_states(#device_request{di=DI}, #aux_spec{shared=Pid,trigger=SE}) ->
     Pid ! { self(), read, DI },
@@ -92,6 +126,7 @@ read_states(#device_request{di=DI}, #aux_spec{shared=Pid,trigger=SE}) ->
 
 start(Oid) ->
     Pid = spawn_link(states_dev, init_task,[]),
+    spawn_link(states_dev, init_fsmset, [Pid]),
     SpecA = #device_spec{ readf=fun read_states/2, setf=fun set_states/2,
 			  atomic_bytes=?ATOMIC_SIZE, max_elements=1,
 			  shared=Pid },
