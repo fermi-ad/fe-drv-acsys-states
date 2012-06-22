@@ -1,4 +1,4 @@
-%%% $Id: states_dev.erl,v 1.5 2011/10/05 14:10:04 nicklaus Exp $
+%%% $Id: states_dev.erl,v 1.6 2012/06/15 20:32:50 neswold Exp $
 
 %%% States Front-end Driver
 %%%
@@ -36,6 +36,7 @@ loop(Tid, S, Seq) ->
 		      (USec * 1000):32/little>>],
 	        acnet:send_usm(state, "STATES@STATES", Data),
 	        loop(Tid, S, (Seq + 1) band 16#ffff);
+
               true ->
 	        CPid ! {error, illegal_val},
 	        loop(Tid, S, Seq)
@@ -82,7 +83,9 @@ fsmset(Pid) ->
 		  info_msg("Bad request: ~p.~n", [Req]),
 		  acnet:send_last_reply(RpyId, ?ACNET_BADREQ, <<>>);
 
-	      _ -> ok
+	      #acnet_request{ref=RpyId} = Req ->
+		  info_msg("Unhandled request: ~p.~n", [Req]),
+		  acnet:send_last_reply(RpyId, ?ACNET_SYS, <<>>)
 	  end,
     fsmset(Pid).
 
