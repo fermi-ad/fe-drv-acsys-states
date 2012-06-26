@@ -66,27 +66,33 @@ set_dev(Pid, DI, V, Min, Max) ->
 %%% Main loop for FSMSET.
 
 devs(Bin) ->
-    [{DI, V} || <<DI:32/little, V:16/little>> <- Bin].
+    [{DI, V} || <<DI:32/little, V:16/little>> <= Bin].
 
 fsmset(Pid) ->
-    catch receive
+    try receive
 	      #acnet_request{ref=RpyId, mult=false,
-			     data= <<10:16/little, Count:16/little, _:48,
+			     data= <<10:16/little, Count:16/little, _Some:48,
 				     Rest/binary>>}
 		when size(Rest) == Count * 6 ->
+		  %%info_msg("FSM Request: ~p~n Devs=~p~n",[Count,devs(Rest)]),
 		  lists:foreach(fun ({DI, V}) ->
 					set_dev(Pid, DI, V, -16#8000, 16#7fff)
 				end, devs(Rest)),
-		  acnet:send_last_reply(RpyId, ?ACNET_SUCCESS, <<>>);
-
+		acnet:send_last_reply(RpyId, ?ACNET_SUCCESS, <<>>)
+		%%info_msg("FSMSET Reply value: ~p~n", [R]),
+		;
 	      #acnet_request{ref=RpyId, mult=true} = Req ->
-		  info_msg("Bad request: ~p.~n", [Req]),
+		  info_msg("FSMSET Bad request: ~p.~n", [Req]),
 		  acnet:send_last_reply(RpyId, ?ACNET_BADREQ, <<>>);
 
 	      #acnet_request{ref=RpyId} = Req ->
-		  info_msg("Unhandled request: ~p.~n", [Req]),
+		  info_msg("FSMSET Unhandled request: ~p.~n", [Req]),
 		  acnet:send_last_reply(RpyId, ?ACNET_SYS, <<>>)
-	  end,
+	      end
+    catch 
+	_:Any ->
+	    info_msg("FSMSET caught: ~p.~n~p~n", [Any,erlang:get_stacktrace()])
+    end,
     fsmset(Pid).
 
 %%% Creates the table and enters an infinite loop.
