@@ -25,21 +25,21 @@
 loop(Tid, S, Seq) ->
     receive
 	{ CPid, set, DI, Val, Min, Max } ->
-            if 
-              Val<Max andalso Val>Min ->
-	        {MSec, Sec, USec} = now(),
-	        CPid ! ok,
-	        ets:insert(Tid, {DI, Val}),
-	        Data = [<<1:16/little, Seq:16/little, 1:32/little>>,
-		    <<0:16/little, DI:32/little, Val:16/little>>,
-		    <<(MSec * 1000000 + Sec):32/little,
-		      (USec * 1000):32/little>>],
-	        acnet:send_usm(state, "STATES@STATES", Data),
-	        loop(Tid, S, (Seq + 1) band 16#ffff);
+            if
+		Val =< Max andalso Val >= Min ->
+		    {MSec, Sec, USec} = now(),
+		    CPid ! ok,
+		    ets:insert(Tid, {DI, Val}),
+		    Data = [<<1:16/little, Seq:16/little, 1:32/little>>,
+			    <<0:16/little, DI:32/little, Val:16/little>>,
+			    <<(MSec * 1000000 + Sec):32/little,
+			      (USec * 1000):32/little>>],
+		    acnet:send_usm(state, "STATES@STATES", Data),
+		    loop(Tid, S, (Seq + 1) band 16#ffff);
 
-              true ->
-	        CPid ! {error, illegal_val},
-	        loop(Tid, S, Seq)
+		true ->
+		    CPid ! {error, illegal_val},
+		    loop(Tid, S, Seq)
             end;
 
 	{ CPid, read, DI } ->
@@ -70,25 +70,25 @@ devs(Bin) ->
 
 fsmset(Pid) ->
     try receive
-	      #acnet_request{ref=RpyId, mult=false,
-			     data= <<10:16/little, Count:16/little, _Some:48,
-				     Rest/binary>>}
-		when size(Rest) == Count * 6 ->
-		  %%info_msg("FSM Request: ~p~n Devs=~p~n",[Count,devs(Rest)]),
-		  lists:foreach(fun ({DI, V}) ->
-					set_dev(Pid, DI, V, -16#8000, 16#7fff)
-				end, devs(Rest)),
+	    #acnet_request{ref=RpyId, mult=false,
+			   data= <<10:16/little, Count:16/little, _Some:48,
+				   Rest/binary>>}
+	      when size(Rest) == Count * 6 ->
+		%%info_msg("FSM Request: ~p~n Devs=~p~n",[Count,devs(Rest)]),
+		lists:foreach(fun ({DI, V}) ->
+				      set_dev(Pid, DI, V, -16#8000, 16#7fff)
+			      end, devs(Rest)),
 		acnet:send_last_reply(RpyId, ?ACNET_SUCCESS, <<>>)
 		%%info_msg("FSMSET Reply value: ~p~n", [R]),
-		;
-	      #acnet_request{ref=RpyId, mult=true} = Req ->
-		  info_msg("FSMSET Bad request: ~p.~n", [Req]),
-		  acnet:send_last_reply(RpyId, ?ACNET_BADREQ, <<>>);
+		    ;
+	    #acnet_request{ref=RpyId, mult=true} = Req ->
+		info_msg("FSMSET Bad request: ~p.~n", [Req]),
+		acnet:send_last_reply(RpyId, ?ACNET_BADREQ, <<>>);
 
-	      #acnet_request{ref=RpyId} = Req ->
-		  info_msg("FSMSET Unhandled request: ~p.~n", [Req]),
-		  acnet:send_last_reply(RpyId, ?ACNET_SYS, <<>>)
-	      end
+	    #acnet_request{ref=RpyId} = Req ->
+		info_msg("FSMSET Unhandled request: ~p.~n", [Req]),
+		acnet:send_last_reply(RpyId, ?ACNET_SYS, <<>>)
+	end
     catch 
 	_:Any ->
 	    info_msg("FSMSET caught: ~p.~n~p~n", [Any,erlang:get_stacktrace()])
