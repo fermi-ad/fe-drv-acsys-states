@@ -69,7 +69,8 @@ devs(Bin) ->
     [{DI, V} || <<DI:32/little, V:16/little>> <= Bin].
 
 fsmset(Pid) ->
-    try receive
+    try
+	receive
 	    #acnet_request{ref=RpyId, mult=false,
 			   data= <<10:16/little, Count:16/little, _Some:48,
 				   Rest/binary>>}
