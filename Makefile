@@ -5,5 +5,6 @@ override DESCRIPTION := STATE front-end driver
 override VSN := 1.0
 override MODULES := states_dev
 override APPLICATIONS := kernel stdlib acnet
+override REGISTERED := fsmset states
 
 include ${ERL_LIBS}/erlang.mk
