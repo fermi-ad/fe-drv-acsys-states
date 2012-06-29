@@ -118,20 +118,16 @@ read_states(#device_request{di=DI}, #aux_spec{shared=Pid,trigger=SE}) ->
     receive
 	{ok, Val} ->
 	    #device_reply{status=?ACNET_SUCCESS,
-		  stamp = SE#sync_event.stamp,
-		  data = <<Val:16/little>>};
-	{error, not_found} ->
+			  stamp = SE#sync_event.stamp,
+			  data = <<Val:16/little>>};
+	{error, _} ->
 	    #device_reply{status=?ERR_UPDATE,
-		  stamp = SE#sync_event.stamp,
-		  data = <<0,0>>};
-	{error, illegal_value} ->
-	    #device_reply{status=?ERR_UPDATE,
-		  stamp = SE#sync_event.stamp,
-		  data = <<0,0>>}
+			  stamp = SE#sync_event.stamp,
+			  data = <<0,0>>}
     after 100 ->
 	    #device_reply{status=?ERR_READTMO,
-		  stamp = SE#sync_event.stamp,
-		  data = <<0,0>>}
+			  stamp = SE#sync_event.stamp,
+			  data = <<0,0>>}
     end.
 
 start(Oid) ->
