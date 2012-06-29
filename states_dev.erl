@@ -16,44 +16,77 @@
 -export([start/1]).
 -export([init_task/0, init_fsmset/1]).
 
--import(error_logger, [info_msg/1, info_msg/2]).
+-import(error_logger, [info_msg/1, info_msg/2, warning_msg/2]).
 
 -define(ATOMIC_SIZE,2).
 
+-record(mystate, {table=ets:new(stateDevTable, [set, private]),
+		  di_alive=undefined :: undefined | integer(),
+		  last_alive=os:timestamp(),
+		  count_alive=0,
+		  socket,
+		  seq=0}).
+
+%%% Multicast a STATES protocol message.
+
+report_new_state(#mystate{table=Tid, seq=Seq} = S, DI, Val) ->
+    {MSec, Sec, USec} = os:timestamp(),
+    ets:insert(Tid, {DI, Val}),
+    Data = [<<1:16/little, Seq:16/little, 1:32/little>>,
+	    <<0:16/little, DI:32/little, Val:16/little>>,
+	    <<(MSec * 1000000 + Sec):32/little,
+	      (USec * 1000):32/little>>],
+    acnet:send_usm(state, "STATES@STATES", Data),
+    S#mystate{seq=(Seq + 1) band 16#ffff}.
+
+%%% Calculate the delay needed to wait until 5 seconds after the last
+%%% timeout. If the system doesn't have a DI defined, then we wait
+%%% forever.
+
+calc_delay(#mystate{di_alive=undefined}) ->
+    infinity;
+calc_delay(#mystate{last_alive=Last}) ->
+    Delta = timer:now_diff(Last, os:timestamp()),
+    max(Delta div 1000 + 5000, 0).
+
+%%% Add five seconds to the provided timesout. The microsecond field
+%%% is always cleared to 0.
+
+add_5_sec({MS, S, _}) ->
+    NS = S + 5,
+    {MS + (NS div 1000000), NS rem 1000000, 0}.
+
 %%% Handle requests to the table.
 
-loop(Tid, S, Seq) ->
-    receive
-	{ CPid, set, DI, Val, Min, Max } ->
-            if
-		Val =< Max andalso Val >= Min ->
-		    {MSec, Sec, USec} = now(),
-		    CPid ! ok,
-		    ets:insert(Tid, {DI, Val}),
-		    Data = [<<1:16/little, Seq:16/little, 1:32/little>>,
-			    <<0:16/little, DI:32/little, Val:16/little>>,
-			    <<(MSec * 1000000 + Sec):32/little,
-			      (USec * 1000):32/little>>],
-		    acnet:send_usm(state, "STATES@STATES", Data),
-		    loop(Tid, S, (Seq + 1) band 16#ffff);
+loop(#mystate{table=Tid, last_alive=Last, count_alive=Count} = S) ->
+    NS = receive
+	     { CPid, set, DI, Val, Min, Max } ->
+		 if
+		     Val =< Max andalso Val >= Min ->
+			 CPid ! ok,
+			 report_new_state(S, DI, Val);
 
-		true ->
-		    CPid ! {error, illegal_val},
-		    loop(Tid, S, Seq)
-            end;
+		     true ->
+			 CPid ! {error, illegal_val},
+			 S
+		 end;
 
-	{ CPid, read, DI } ->
-	    case ets:lookup(Tid, DI) of
-		[] ->
-		    CPid ! {error, not_found};
-		[{_, Val}] ->
-		    CPid ! {ok, Val}
-	    end,
-	    loop(Tid, S, Seq);
+	     { CPid, read, DI } ->
+		 case ets:lookup(Tid, DI) of
+		     [] ->
+			 CPid ! {error, not_found};
+		     [{_, Val}] ->
+			 CPid ! {ok, Val}
+		 end,
+		 S;
 
-	_ ->
-	    loop(Tid, S, Seq)
-    end.
+	     _ -> S
+	 after calc_delay(S) ->
+		 report_new_state(S#mystate{last_alive=add_5_sec(Last),
+					    count_alive=(Count + 1) band 16#ffff},
+				  S#mystate.di_alive, Count)
+	 end,
+    loop(NS).
 
 set_dev(Pid, DI, V, Min, Max) ->
     Pid ! { self(), set, DI, V, Min, Max },
@@ -96,12 +129,42 @@ fsmset(Pid) ->
     end,
     fsmset(Pid).
 
+%%% Pulls the value of the "alive" states device's device index from
+%%% the 'daq' app's environment. If no definition is there or the
+%%% parameter is there but isn't an integer, then 'undefined' is
+%%% returned.
+
+get_alive_di() ->
+    Param = states_alive_di,
+    case application:get_env(daq, Param) of
+	undefined ->
+	    warning_msg("STATES FRONT-END: No keep alive states device configured. To~n"
+			"remove this warning, add the parameter \"~p\" to the~n"
+			"daq environment.~n", [Param]),
+	    undefined;
+
+	{ok, Val} ->
+	    if
+		is_integer(Val) ->
+		    info_msg("STATES FRONT-END: Using ~B as the keep-alive state "
+			     "device index~n", [Val]),
+		    Val;
+
+		true ->
+		    warning_msg("STATES FRONT-END: Bad keep-alive device index "
+				"specified. It~nshould be an integer but instead "
+				"was defined as:~n   ~p~n", [Val]),
+		    undefined
+	    end
+    end.
+
 %%% Creates the table and enters an infinite loop.
 
 init_task() ->
     acnet:start(state),
+    {MSec, Sec, _} = os:timestamp(),
     {ok, S} = gen_udp:open(0),
-    loop(ets:new(stateDevTable, [set, private]), S, 0).
+    loop(#mystate{socket=S, di_alive=get_alive_di(), last_alive={MSec, Sec, 0}}).
 
 init_fsmset(Pid) ->
     acnet:start(fsmset),
