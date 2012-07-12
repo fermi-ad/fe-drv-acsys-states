@@ -69,11 +69,11 @@ report_new_state(#mystate{table=Tid, seq=Seq} = S, DI, Val) ->
 calc_delay(#mystate{di_alive=undefined}) ->
     infinity;
 calc_delay(#mystate{last_alive=Last}) ->
-    Delta = timer:now_diff(Last, os:timestamp()),
-    max(Delta div 1000 + 5000, 0).
+    Delta = timer:now_diff(os:timestamp(), Last) div 1000,
+    max(5000 - Delta, 0).
 
-%%% Add five seconds to the provided timesout. The microsecond field
-%%% is always cleared to 0.
+%%% Add five seconds to the provided timeout. The microsecond field is
+%%% always cleared to 0.
 
 add_5_sec({MS, S, _}) ->
     NS = S + 5,
