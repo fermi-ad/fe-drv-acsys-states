@@ -228,14 +228,14 @@ read_states(#device_request{di=DI}, #aux_spec{shared=Pid, trigger=SE}) ->
 
 set_status(#setdat_1device{di=DI, settingdata= <<Val:16/little>>},
 	   #aux_spec{shared=Pid}) ->
-    Pid ! { self(), enable, Val =:= 1, DI },
+    Pid ! { self(), enable, Val =:= 2, DI },
     receive
 	ok -> ?ACNET_SUCCESS
     after 100 -> ?ERR_READTMO
     end.
 
-bool_to_int(true) -> 1;
-bool_to_int(false) -> 0.
+bool_to_int(true) -> 2;
+bool_to_int(false) -> 1.
 
 read_status(#device_request{di=DI}, #aux_spec{shared=Pid, trigger=SE}) ->
     Pid ! { self(), status, DI },
