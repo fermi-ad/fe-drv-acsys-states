@@ -55,7 +55,7 @@ report_new_state(#mystate{table=Tid, seq=Seq} = S, DI, Val) ->
 		    <<0:16/little, DI:32/little, Val:16/little>>,
 		    <<(MSec * 1000000 + Sec):32/little,
 		      (USec * 1000):32/little>>],
-	    acnet:send_usm(state, "STATES@STATES", Data),
+	    acnet:send_usm(fsmset, "STATES@STATES", Data),
 	    S#mystate{seq=(Seq + 1) band 16#ffff};
 
 	false ->
@@ -156,7 +156,7 @@ fsmset(Pid) ->
 		info_msg("FSMSET Unhandled request: ~p.~n", [Req]),
 		acnet:send_last_reply(RpyId, ?ACNET_SYS, <<>>)
 	end
-    catch 
+    catch
 	_:Any ->
 	    info_msg("FSMSET caught: ~p.~n~p~n", [Any,erlang:get_stacktrace()])
     end,
@@ -194,13 +194,12 @@ get_alive_di() ->
 %%% Creates the table and enters an infinite loop.
 
 init_task() ->
-    acnet:start(state),
+    acnet:start(fsmset, "FSMSET", "STATE"),
     {MSec, Sec, _} = os:timestamp(),
     {ok, S} = gen_udp:open(0),
     loop(#mystate{socket=S, di_alive=get_alive_di(), last_alive={MSec, Sec, 0}}).
 
 init_fsmset(Pid) ->
-    acnet:start(fsmset),
     acnet:accept_requests(fsmset),
     fsmset(Pid).
 
