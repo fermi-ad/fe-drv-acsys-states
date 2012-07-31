@@ -194,7 +194,6 @@ get_alive_di() ->
 %%% Creates the table and enters an infinite loop.
 
 init_task() ->
-    acnet:start(fsmset, "FSMSET", "STATE"),
     {MSec, Sec, _} = os:timestamp(),
     {ok, S} = gen_udp:open(0),
     loop(#mystate{socket=S, di_alive=get_alive_di(), last_alive={MSec, Sec, 0}}).
@@ -250,6 +249,7 @@ read_status(#device_request{di=DI}, #aux_spec{shared=Pid, trigger=SE}) ->
     end.
 
 start(Oid) ->
+    acnet:start(fsmset, "FSMSET", "STATE"),
     Pid = spawn_link(states_dev, init_task,[]),
     spawn_link(states_dev, init_fsmset, [Pid]),
     Spec1 = #device_spec{ readf=fun read_states/2, setf=fun set_states/2,
