@@ -8,31 +8,31 @@
 %%% a setting. If necessary, we can add the other complexity.
 
 -module(states_dev).
+-vsn(1).
+-behavior(driver).
 
 -include_lib("acnet/include/acnet.hrl").
 -include_lib("daq/include/devices.hrl").
--include_lib("daq/include/setdat_protocol.hrl").
 
--export([start/1]).
--export([init_task/0, init_fsmset/1]).
+-export([init/1, message/2, reading/4, setting/3, terminate/1]).
 
 -import(error_logger, [info_msg/1, info_msg/2, warning_msg/2]).
 
--define(ATOMIC_SIZE, 2).
-
 -record(mystate, {table=ets:new(stateDevTable, [set, private]),
-		  di_alive=undefined :: undefined | integer(),
-		  last_alive=os:timestamp(),
 		  count_alive=0,
 		  socket,
 		  seq=0}).
 
+-spec update_status(ets:tid(), integer(), boolean()) -> 'true'.
+
 update_status(Tid, DI, State) ->
     case ets:lookup(Tid, DI) of
-	[] -> ok;
+	[] -> true;
 	[{_, Val, _}] ->
 	    ets:insert(Tid, {DI, Val, State})
     end.
+
+-spec update_value(ets:tid(), integer(), integer()) -> boolean().
 
 update_value(Tid, DI, Val) ->
     case ets:lookup(Tid, DI) of
@@ -45,16 +45,50 @@ update_value(Tid, DI, Val) ->
 	    State
     end.
 
+%%% Pulls the value of the "alive" states device's device index from
+%%% the 'daq' app's environment. If no definition is there or the
+%%% parameter is there but isn't an integer, then 'undefined' is
+%%% returned.
+
+-spec get_alive_di() -> 'undefined' | integer().
+
+get_alive_di() ->
+    Param = states_alive_di,
+    case application:get_env(daq, Param) of
+	undefined ->
+	    warning_msg("STATES FRONT-END: No keep alive states device "
+			"configured. To~nremove this warning, add the "
+			"parameter \"~p\" to the~n'daq' environment.~n",
+			[Param]),
+	    undefined;
+
+	{ok, Val} ->
+	    if
+		is_integer(Val) ->
+		    info_msg("STATES FRONT-END: Using ~B as the keep-alive "
+			     "state device index.~n", [Val]),
+		    Val;
+
+		true ->
+		    warning_msg("STATES FRONT-END: Bad keep-alive device "
+				"index specified. It~nshould be an integer "
+				"but instead was defined as:~n   ~p~n", [Val]),
+		    undefined
+	    end
+    end.
+
 %%% Multicast a STATES protocol message.
+
+-spec report_new_state(#mystate{}, integer(), integer()) -> #mystate{}.
 
 report_new_state(#mystate{table=Tid, seq=Seq} = S, DI, Val) ->
     {MSec, Sec, USec} = os:timestamp(),
     case update_value(Tid, DI, Val) of
 	true ->
-	    Data = [<<1:16/little, Seq:16/little, 1:32/little>>,
-		    <<0:16/little, DI:32/little, Val:16/little>>,
-		    <<(MSec * 1000000 + Sec):32/little,
-		      (USec * 1000):32/little>>],
+	    Data = <<1:16/little, Seq:16/little, 1:32/little,
+		     0:16/little, DI:32/little, Val:16/little,
+		     (MSec * 1000000 + Sec):32/little,
+		     (USec * 1000):32/little>>,
 	    acnet:send_usm(fsmset, "STATES@STATES", Data),
 	    S#mystate{seq=(Seq + 1) band 16#ffff};
 
@@ -62,203 +96,102 @@ report_new_state(#mystate{table=Tid, seq=Seq} = S, DI, Val) ->
 	    S
     end.
 
-%%% Calculate the delay needed to wait until 5 seconds after the last
-%%% timeout. If the system doesn't have a DI defined, then we wait
-%%% forever.
-
-calc_delay(#mystate{di_alive=undefined}) ->
-    infinity;
-calc_delay(#mystate{last_alive=Last}) ->
-    Delta = timer:now_diff(os:timestamp(), Last) div 1000,
-    max(5000 - Delta, 0).
-
-%%% Add five seconds to the provided timeout. The microsecond field is
-%%% always cleared to 0.
-
-add_5_sec({MS, S, _}) ->
-    NS = S + 5,
-    {MS + (NS div 1000000), NS rem 1000000, 0}.
-
-%%% Handle requests to the table.
-
-loop(#mystate{table=Tid, last_alive=Last, count_alive=Count} = S) ->
-    NS = receive
-	     { CPid, set, DI, Val, Min, Max } ->
-		 if
-		     Val =< Max andalso Val >= Min ->
-			 CPid ! ok,
-			 report_new_state(S, DI, Val);
-
-		     true ->
-			 CPid ! {error, illegal_val},
-			 S
-		 end;
-
-	     { CPid, read, DI } ->
-		 case ets:lookup(Tid, DI) of
-		     [] -> CPid ! {error, not_found};
-		     [{_, Val, _}] -> CPid ! {ok, Val}
-		 end,
-		 S;
-
-	     { CPid, enable, State, DI } ->
-		 CPid ! ok,
-		 update_status(Tid, DI, State),
-		 S;
-
-	     { CPid, status, DI } ->
-		 case ets:lookup(Tid, DI) of
-		     [] -> CPid ! {ok, false};
-		     [{_, _, Val}] -> CPid ! {ok, Val}
-		 end,
-		 S;
-
-	     _ -> S
-	 after calc_delay(S) ->
-		 report_new_state(S#mystate{last_alive=add_5_sec(Last),
-					    count_alive=(Count + 1) band 16#ffff},
-				  S#mystate.di_alive, Count)
-	 end,
-    loop(NS).
-
-set_dev(Pid, DI, V, Min, Max) ->
-    Pid ! { self(), set, DI, V, Min, Max },
-    receive
-	ok -> ?ACNET_SUCCESS;
-	{error, _} -> ?ACNET_INVARG
-    after 100 -> ?ERR_READTMO
-    end.
-
-%%% Main loop for FSMSET.
+-spec devs(binary()) -> tuple(integer(), integer()).
 
 devs(Bin) ->
     [{DI, V} || <<DI:32/little, V:16/little>> <= Bin].
 
-fsmset(Pid) ->
-    try
-	receive
-	    #acnet_request{ref=RpyId, mult=false,
-			   data= <<10:16/little, Count:16/little, _Some:48,
-				   Rest/binary>>}
-	      when size(Rest) == Count * 6 ->
-		%%info_msg("FSM Request: ~p~n Devs=~p~n",[Count,devs(Rest)]),
-		lists:foreach(fun ({DI, V}) ->
-				      set_dev(Pid, DI, V, -16#8000, 16#7fff)
-			      end, devs(Rest)),
-		acnet:send_last_reply(RpyId, ?ACNET_SUCCESS, <<>>)
-		%%info_msg("FSMSET Reply value: ~p~n", [R]),
-		    ;
-	    #acnet_request{ref=RpyId, mult=true} = Req ->
-		info_msg("FSMSET Bad request: ~p.~n", [Req]),
-		acnet:send_last_reply(RpyId, ?ACNET_BADREQ, <<>>);
+%%% ===========================================================================
+%%% This section defines the 'driver' behavior interface.
 
-	    #acnet_request{ref=RpyId} = Req ->
-		info_msg("FSMSET Unhandled request: ~p.~n", [Req]),
-		acnet:send_last_reply(RpyId, ?ACNET_SYS, <<>>)
-	end
-    catch
-	_:Any ->
-	    info_msg("FSMSET caught: ~p.~n~p~n", [Any,erlang:get_stacktrace()])
-    end,
-    fsmset(Pid).
+-spec init(any()) ->
+		  tuple('ready', #mystate{}, array()) |
+		  tuple('error', string()).
 
-%%% Pulls the value of the "alive" states device's device index from
-%%% the 'daq' app's environment. If no definition is there or the
-%%% parameter is there but isn't an integer, then 'undefined' is
-%%% returned.
-
-get_alive_di() ->
-    Param = states_alive_di,
-    case application:get_env(daq, Param) of
-	undefined ->
-	    warning_msg("STATES FRONT-END: No keep alive states device configured. To~n"
-			"remove this warning, add the parameter \"~p\" to the~n"
-			"daq environment.~n", [Param]),
-	    undefined;
-
-	{ok, Val} ->
-	    if
-		is_integer(Val) ->
-		    info_msg("STATES FRONT-END: Using ~B as the keep-alive state "
-			     "device index~n", [Val]),
-		    Val;
-
-		true ->
-		    warning_msg("STATES FRONT-END: Bad keep-alive device index "
-				"specified. It~nshould be an integer but instead "
-				"was defined as:~n   ~p~n", [Val]),
-		    undefined
-	    end
-    end.
-
-%%% Creates the table and enters an infinite loop.
-
-init_task() ->
-    {MSec, Sec, _} = os:timestamp(),
+init(_) ->
     {ok, S} = gen_udp:open(0),
-    loop(#mystate{socket=S, di_alive=get_alive_di(), last_alive={MSec, Sec, 0}}).
-
-init_fsmset(Pid) ->
-    acnet:accept_requests(fsmset),
-    fsmset(Pid).
-
-set_states(#setdat_1device{di=DI, settingdata= <<Val:16/little>>,
-			   ssdn= << _:32, Min:16/little, Max:16/little>>},
-	   #aux_spec{shared=Pid}) ->
-    set_dev(Pid, DI, Val, Min, Max).
-
-read_states(#device_request{di=DI}, #aux_spec{shared=Pid, trigger=SE}) ->
-    Pid ! { self(), read, DI },
-    receive
-	{ok, Val} ->
-	    #device_reply{status=?ACNET_SUCCESS,
-			  stamp = SE#sync_event.stamp,
-			  data = <<Val:16/little>>};
-	{error, _} ->
-	    #device_reply{status=?ERR_UPDATE,
-			  stamp = SE#sync_event.stamp,
-			  data = <<0,0>>}
-    after 100 ->
-	    #device_reply{status=?ERR_READTMO,
-			  stamp = os:timestamp(),
-			  data = <<0,0>>}
-    end.
-
-set_status(#setdat_1device{di=DI, settingdata= <<Val:16/little>>},
-	   #aux_spec{shared=Pid}) ->
-    Pid ! { self(), enable, Val =:= 2, DI },
-    receive
-	ok -> ?ACNET_SUCCESS
-    after 100 -> ?ERR_READTMO
+    try
+	acnet:start(fsmset, "FSMSET", "STATE"),
+	acnet:accept_requests(fsmset),
+	Attrs = [#attr_spec{typ_elem='Int16', num_elem=1, name=state,
+			    description= <<"Read/set a state device.">>},
+		 #attr_spec{typ_elem='Int16', num_elem=1, name=status,
+			    description= <<"Read/set a state device's status.">>}],
+	case get_alive_di() of
+	    undefined -> ok;
+	    DI -> erlang:start_timer(5000, self(), DI)
+	end,
+	{ready, #mystate{socket=S}, array:from_list(Attrs)}
+    catch
+	_:_ ->
+	    gen_udp:close(S),
+	    {error, "Error connecting to ACNET."}
     end.
 
 bool_to_int(true) -> 2;
 bool_to_int(false) -> 1.
 
-read_status(#device_request{di=DI}, #aux_spec{shared=Pid, trigger=SE}) ->
-    Pid ! { self(), status, DI },
-    receive
-	{ok, Val} ->
-	    #device_reply{status=?ACNET_SUCCESS,
-			  stamp = SE#sync_event.stamp,
-			  data = <<(bool_to_int(Val)):16/little>>}
-    after 100 ->
-	    #device_reply{status=?ERR_READTMO,
-			  stamp = os:timestamp(),
-			  data = <<0,0>>}
-    end.
+reading(S, _, #reading_context{attribute=state, di=DI}, Stamp) ->
+    {Status, Data} = case ets:lookup(S#mystate.table, DI) of
+			 [] ->
+			     {?ERR_UPDATE, <<0:16/little>>};
+			 [{_, Val, _}] ->
+			     {?ACNET_SUCCESS, <<Val:16/signed-little>>}
+		     end,
+    {S, #device_reply{stamp=Stamp, data=Data, status=Status}};
+reading(S, _, #reading_context{attribute=status, di=DI}, Stamp) ->
+    {S, #device_reply{stamp=Stamp, status=?ACNET_SUCCESS,
+		      data=case ets:lookup(S#mystate.table, DI) of
+			       [] ->
+				   <<0:16/little>>;
+			       [{_, _, Val}] ->
+				   <<(bool_to_int(Val)):16/little>>
+			   end}}.
 
-start(Oid) ->
-    acnet:start(fsmset, "FSMSET", "STATE"),
-    Pid = spawn_link(states_dev, init_task,[]),
-    spawn_link(states_dev, init_fsmset, [Pid]),
-    Spec1 = #device_spec{ readf=fun read_states/2, setf=fun set_states/2,
-			  atomic_bytes=?ATOMIC_SIZE, max_elements=1,
-			  shared=Pid },
-    Spec2 = #device_spec{ readf=fun read_status/2, setf=fun set_status/2,
-			  atomic_bytes=?ATOMIC_SIZE, max_elements=1,
-			  shared=Pid },
-    devices:install_pi_attr_functions(Oid, ?PI_READNG, 0, Spec1),
-    devices:install_pi_attr_functions(Oid, ?PI_SETTNG, 0, Spec1),
-    devices:install_pi_attr_functions(Oid, ?PI_BASTAT, 0, Spec2),
-    devices:install_pi_attr_functions(Oid, ?PI_BCNTRL, 0, Spec2).
+setting(S, #setting_context{ssdn= <<_:32, Mn:16/little, Mx:16/little>>, di=DI,
+			    attribute=state}, <<V:16/signed-little>>) ->
+    set_dev(S, DI, V, Mn, Mx);
+setting(S, #setting_context{attribute=status, di=DI},
+	<<Val:16/signed-little>>) ->
+    update_status(S#mystate.table, DI, Val =:= 2),
+    {S, ?ACNET_SUCCESS}.
+
+terminate(#mystate{socket=Sock}) ->
+    gen_udp:close(Sock).
+
+%%% This callback handles miscellaneous messages that we configured to
+%%% be sent to us.
+
+-spec message(#mystate{}, term()) -> #mystate{}.
+
+message(S, #acnet_request{data= <<10:16/little, Count:16/little, _Some:48,
+				  Rest/binary>>, ref=RpyId, mult=false})
+  when size(Rest) == Count * 6 ->
+    acnet:send_last_reply(RpyId, ?ACNET_SUCCESS, <<>>),
+    lists:foldl(fun ({DI, V}, Acc) ->
+			{NAcc, _} = set_dev(Acc, DI, V, -16#8000, 16#7fff),
+			NAcc
+		end, S, devs(Rest));
+message(#mystate{} = S, #acnet_request{ref=RpyId, mult=true} = Req) ->
+    info_msg("FSMSET Bad request: ~p.~n", [Req]),
+    acnet:send_last_reply(RpyId, ?ACNET_BADREQ, <<>>),
+    S;
+message(#mystate{count_alive=Count} = S, {timeout, _, DI}) ->
+    erlang:start_timer(5000, self(), DI),
+    report_new_state(S#mystate{count_alive=(Count + 1) band 16#ffff}, DI,
+		     Count);
+message(#mystate{} = S, #acnet_request{ref=RpyId} = Req) ->
+    info_msg("FSMSET Unhandled request: ~p.~n", [Req]),
+    acnet:send_last_reply(RpyId, ?ACNET_SYS, <<>>),
+    S.
+
+-spec set_dev(#mystate{}, integer(), integer(), integer(), integer()) ->
+		     tuple(#mystate{}, acnet:status()).
+
+set_dev(S, DI, V, Min, Max) ->
+    if
+	V =< Max andalso V >= Min ->
+	    {report_new_state(S, DI, V), ?ACNET_SUCCESS};
+
+	true -> {S, ?ACNET_INVARG}
+    end.
