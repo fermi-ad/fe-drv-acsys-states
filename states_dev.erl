@@ -128,8 +128,8 @@ init(_) ->
 	    {error, "Error connecting to ACNET."}
     end.
 
-bool_to_int(true) -> 2;
-bool_to_int(false) -> 1.
+bool_to_int(true) -> 1;
+bool_to_int(false) -> 2.
 
 reading(S, _, #reading_context{attribute=state, di=DI}, Stamp) ->
     {Status, Data} = case ets:lookup(S#mystate.table, DI) of
@@ -153,7 +153,7 @@ setting(S, #setting_context{ssdn= <<_:32, Mn:16/little, Mx:16/little>>, di=DI,
     set_dev(S, DI, V, Mn, Mx);
 setting(S, #setting_context{attribute=status, di=DI},
 	<<Val:16/signed-little>>) ->
-    update_status(S#mystate.table, DI, Val =:= 2),
+    update_status(S#mystate.table, DI, Val =:= 1),
     {S, ?ACNET_SUCCESS}.
 
 terminate(#mystate{socket=Sock}) ->
