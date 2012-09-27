@@ -19,7 +19,6 @@
 -import(error_logger, [info_msg/1, info_msg/2, warning_msg/2]).
 
 -record(mystate, {table=ets:new(stateDevTable, [set, private]),
-		  count_alive=0,
 		  socket,
 		  seq=0}).
 
@@ -181,11 +180,12 @@ message(#mystate{} = S, #acnet_request{ref=RpyId, mult=true} = Req) ->
     info_msg("FSMSET Bad request: ~p.~n", [Req]),
     acnet:send_last_reply(RpyId, ?ACNET_BADREQ, <<>>),
     S;
-message(#mystate{count_alive=Count} = S, {timeout, _, DI}) ->
+message(#mystate{table=Tid} = S, {timeout, _, DI}) ->
     erlang:start_timer(5000, self(), DI),
-    report_new_state(S#mystate{count_alive=(Count + 1) band 16#ffff}, DI,
-		     Count);
-message(#mystate{} = S, #acnet_request{ref=RpyId} = Req) ->
+    {_, Count} = read_value(Tid, DI),
+    update_value(Tid, DI, (Count + 1) band 16#ffff),
+    report_new_state(S, DI, Count);
+message(S, #acnet_request{ref=RpyId} = Req) ->
     info_msg("FSMSET Unhandled request: ~p.~n", [Req]),
     acnet:send_last_reply(RpyId, ?ACNET_SYS, <<>>),
     S.
