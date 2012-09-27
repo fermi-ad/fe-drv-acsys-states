@@ -123,15 +123,18 @@ init(_) ->
     try
 	acnet:start(fsmset, "FSMSET", "STATE"),
 	acnet:accept_requests(fsmset),
+	Tid = ets:new(stateDevTable, [set, private]),
 	Attrs = [#attr_spec{typ_elem='Int16', num_elem=1, name=state,
 			    description= <<"Read/set a state device.">>},
 		 #attr_spec{typ_elem='Int16', num_elem=1, name=status,
 			    description= <<"Read/set a state device's status.">>}],
 	case get_alive_di() of
 	    undefined -> ok;
-	    DI -> erlang:start_timer(5000, self(), DI)
+	    DI ->
+		erlang:start_timer(5000, self(), DI),
+		update_value(Tid, DI, 0)
 	end,
-	{ready, #mystate{socket=S}, array:from_list(Attrs)}
+	{ready, #mystate{socket=S, table=Tid}, array:from_list(Attrs)}
     catch
 	_:_ ->
 	    gen_udp:close(S),
