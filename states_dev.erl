@@ -176,7 +176,7 @@ message(S, #acnet_request{data= <<10:16/little, Count:16/little, _Some:48,
 			{NAcc, _} = set_dev(Acc, DI, V, -16#8000, 16#7fff),
 			NAcc
 		end, S, devs(Rest));
-message(#mystate{} = S, #acnet_request{ref=RpyId, mult=true} = Req) ->
+message(S, #acnet_request{ref=RpyId, mult=true} = Req) ->
     info_msg("FSMSET Bad request: ~p.~n", [Req]),
     acnet:send_last_reply(RpyId, ?ACNET_BADREQ, <<>>),
     S;
