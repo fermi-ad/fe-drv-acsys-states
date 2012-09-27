@@ -155,10 +155,9 @@ reading(S, _, #reading_context{attribute=status, di=DI}, Stamp) ->
 			   end}}.
 
 setting(S, #setting_context{ssdn= <<_:32, Mn:16/little, Mx:16/little>>, di=DI,
-			    attribute=state}, <<V:16/signed-little>>) ->
+			    attribute=state}, <<V:16/little>>) ->
     set_dev(S, DI, V, Mn, Mx);
-setting(S, #setting_context{attribute=status, di=DI},
-	<<Val:16/signed-little>>) ->
+setting(S, #setting_context{attribute=status, di=DI}, <<Val:16/little>>) ->
     update_status(S#mystate.table, DI, Val =:= 1),
     {S, ?ACNET_SUCCESS}.
 
