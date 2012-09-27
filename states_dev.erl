@@ -18,9 +18,7 @@
 
 -import(error_logger, [info_msg/1, info_msg/2, warning_msg/2]).
 
--record(mystate, {table=ets:new(stateDevTable, [set, private]),
-		  socket,
-		  seq=0}).
+-record(mystate, {table, socket, seq=0}).
 
 -spec update_status(ets:tid(), integer(), boolean()) -> 'true'.
 
