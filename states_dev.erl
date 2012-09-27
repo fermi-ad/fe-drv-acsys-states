@@ -45,6 +45,17 @@ update_value(Tid, DI, Val) ->
 	    State
     end.
 
+-spec read_value(ets:tid(), integer()) ->
+			tuple(acnet:status(), integer()).
+
+read_value(Tid, DI) ->
+    case ets:lookup(Tid, DI) of
+	[] ->
+	    {?ERR_UPDATE, 0};
+	[{_, Val, _}] ->
+	    {?ACNET_SUCCESS, Val}
+    end.
+
 %%% Pulls the value of the "alive" states device's device index from
 %%% the 'daq' app's environment. If no definition is there or the
 %%% parameter is there but isn't an integer, then 'undefined' is
@@ -132,13 +143,8 @@ bool_to_int(true) -> 1;
 bool_to_int(false) -> 2.
 
 reading(S, _, #reading_context{attribute=state, di=DI}, Stamp) ->
-    {Status, Data} = case ets:lookup(S#mystate.table, DI) of
-			 [] ->
-			     {?ERR_UPDATE, <<0:16/little>>};
-			 [{_, Val, _}] ->
-			     {?ACNET_SUCCESS, <<Val:16/signed-little>>}
-		     end,
-    {S, #device_reply{stamp=Stamp, data=Data, status=Status}};
+    {Status, Data} = read_value(S#mystate.table, DI),
+    {S, #device_reply{stamp=Stamp, data= <<Data:16/little>>, status=Status}};
 reading(S, _, #reading_context{attribute=status, di=DI}, Stamp) ->
     {S, #device_reply{stamp=Stamp, status=?ACNET_SUCCESS,
 		      data=case ets:lookup(S#mystate.table, DI) of
