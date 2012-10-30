@@ -140,7 +140,7 @@ init(_) ->
     end.
 
 bool_to_int(true) -> 1;
-bool_to_int(false) -> 2.
+bool_to_int(false) -> 0.
 
 reading(S, _, #reading_context{attribute=state, di=DI}, Stamp) ->
     {Status, Data} = read_value(S#mystate.table, DI),
@@ -158,7 +158,7 @@ setting(S, #setting_context{ssdn= <<_:32, Mn:16/little, Mx:16/little>>, di=DI,
 			    attribute=state}, <<V:16/little>>) ->
     set_dev(S, DI, V, Mn, Mx);
 setting(S, #setting_context{attribute=status, di=DI}, <<Val:16/little>>) ->
-    update_status(S#mystate.table, DI, Val =:= 1),
+    update_status(S#mystate.table, DI, Val =:= 2),
     {S, ?ACNET_SUCCESS}.
 
 terminate(#mystate{socket=Sock}) ->
