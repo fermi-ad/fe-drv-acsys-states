@@ -142,10 +142,12 @@ init(_) ->
 bool_to_int(true) -> 1;
 bool_to_int(false) -> 0.
 
-reading(S, _, #reading_context{attribute=state, di=DI}, Stamp) ->
+reading(S, _, #reading_context{attribute=state, di=DI},
+	#sync_event{stamp=Stamp}) ->
     {Status, Data} = read_value(S#mystate.table, DI),
     {S, #device_reply{stamp=Stamp, data= <<Data:16/little>>, status=Status}};
-reading(S, _, #reading_context{attribute=status, di=DI}, Stamp) ->
+reading(S, _, #reading_context{attribute=status, di=DI},
+	#sync_event{stamp=Stamp}) ->
     {S, #device_reply{stamp=Stamp, status=?ACNET_SUCCESS,
 		      data=case ets:lookup(S#mystate.table, DI) of
 			       [] ->
