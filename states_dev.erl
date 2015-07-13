@@ -43,7 +43,7 @@ update_value(Tid, DI, Val) ->
     end.
 
 -spec read_value(ets:tid(), integer()) ->
-			tuple(acnet:status(), integer()).
+			{acnet:status(), integer()}.
 
 read_value(Tid, DI) ->
     case ets:lookup(Tid, DI) of
@@ -104,7 +104,7 @@ report_new_state(#mystate{table=Tid, seq=Seq} = S, DI, Val) ->
 	    S
     end.
 
--spec devs(binary()) -> tuple(integer(), integer()).
+-spec devs(binary()) -> {integer(), integer()}.
 
 devs(Bin) ->
     [{DI, V} || <<DI:32/little, V:16/little>> <= Bin].
@@ -113,8 +113,8 @@ devs(Bin) ->
 %%% This section defines the 'driver' behavior interface.
 
 -spec init(any()) ->
-		  tuple('ready', #mystate{}, array()) |
-		  tuple('error', string()).
+		  {'ready', #mystate{}, array:array()} |
+		  {'error', string()}.
 
 init(_) ->
     {ok, S} = gen_udp:open(0),
@@ -194,7 +194,7 @@ message(S, #acnet_request{ref=RpyId} = Req) ->
     S.
 
 -spec set_dev(#mystate{}, integer(), integer(), integer(), integer()) ->
-		     tuple(#mystate{}, acnet:status()).
+		     {#mystate{}, acnet:status()}.
 
 set_dev(S, DI, V, Min, Max) ->
     if
