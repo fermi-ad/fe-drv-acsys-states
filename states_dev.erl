@@ -11,7 +11,6 @@
 -vsn(1).
 -behavior(driver).
 
--include_lib("acnet/include/acnet.hrl").
 -include_lib("daq/include/devices.hrl").
 
 -export([init/1, message/2, reading/4, setting/3, terminate/1]).
