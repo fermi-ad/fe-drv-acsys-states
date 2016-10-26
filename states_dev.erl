@@ -63,7 +63,7 @@ get_alive_di() ->
     Param = states_alive_di,
     case application:get_env(daq, Param) of
 	undefined ->
-	    warning_msg("STATES FRONT-END: No keep alive states device "
+	    warning_msg("STATES FRONT-END: No keep-alive states device "
 			"configured. To~nremove this warning, add the "
 			"parameter \"~p\" to the~n'daq' environment.~n",
 			[Param]),
