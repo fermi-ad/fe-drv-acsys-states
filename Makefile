@@ -8,3 +8,4 @@ override APPLICATIONS := kernel stdlib acnet
 override REGISTERED := fsmset state
 
 include ${ERL_LIBS}/erlang.mk
+
