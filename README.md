@@ -1,6 +1,6 @@
 # STATES Driver for ACSys/FE
 
-This driver provides the STATES service for the Fermilab (and NoVA)
+This driver provides the STATES service for the Fermilab (and NOvA)
 control system. The set of ACNET devices associated with this driver
 are known as "state devices". They take a 16-bit value for their
 setting. Each time a state device is set, its value is multicast.
@@ -30,7 +30,7 @@ the DI to its set. This means after a restart the driver starts with
 an empty set. Trying to read a state device after a restart, but
 before the device gets set will return an error.
 
-This strategy has woked well at NoVA (which has only used this driver
+This strategy has woked well at NOvA (which has only used this driver
 for their STATES support.)
 
 We may add an RPC in the LOOPUP service to provide a way to initialize
