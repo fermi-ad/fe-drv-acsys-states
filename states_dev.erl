@@ -69,19 +69,16 @@ get_alive_di() ->
 			[Param]),
 	    'undefined';
 
-	{ok, Val} ->
-	    if
-		is_integer(Val) ->
-		    info_msg("STATES FRONT-END: Using ~B as the keep-alive "
-			     "state device index.~n", [Val]),
-		    Val;
+	{'ok', Val} when is_integer(Val) ->
+	    info_msg("STATES FRONT-END: Using ~B as the keep-alive "
+		     "state device index.~n", [Val]),
+	    Val;
 
-		true ->
-		    warning_msg("STATES FRONT-END: Bad keep-alive device "
-				"index specified. It~nshould be an integer "
-				"but instead was defined as:~n   ~p~n", [Val]),
-		    'undefined'
-	    end
+	{'ok', Val} ->
+	    warning_msg("STATES FRONT-END: Bad keep-alive device "
+			"index specified. It~nshould be an integer "
+			"but instead was defined as:~n   ~p~n", [Val]),
+	    'undefined'
     end.
 
 %%% Multicast a STATES protocol message.
