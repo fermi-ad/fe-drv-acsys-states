@@ -41,6 +41,14 @@ update_value(Tid, DI, Val) ->
 	    State
     end.
 
+-spec read_state(ets:tid(), integer()) -> boolean().
+
+read_state(Tid, DI) ->
+    case ets:lookup(Tid, DI) of
+	[] -> 'false';
+	[{_, _, State}] -> State
+    end.
+
 -spec read_value(ets:tid(), integer()) ->
 			{acnet:status(), integer()}.
 
@@ -184,13 +192,9 @@ reading(S, _, #reading_context{attribute='state', di=DI},
 
 reading(S, _, #reading_context{attribute='status', di=DI},
 	#sync_event{stamp=Stamp}) ->
+    Value = read_state(S#mystate.table, DI),
     {S, #device_reply{stamp=Stamp, status=?ACNET_SUCCESS,
-		      data=case ets:lookup(S#mystate.table, DI) of
-			       [] ->
-				   <<0:16/little>>;
-			       [{_, _, Val}] ->
-				   <<(bool_to_int(Val)):16/little>>
-			   end}}.
+		      data= <<(bool_to_int(Value)):16/little>>}}.
 
 %%% This function is called when handling setting requests in the
 %%% framework for the `state` attribute.
