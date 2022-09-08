@@ -195,10 +195,9 @@ message(S, #acnet_request{ref=RpyId} = Req) ->
 -spec set_dev(#mystate{}, integer(), integer(), integer(), integer()) ->
 		     {#mystate{}, acnet:status()}.
 
-set_dev(S, DI, V, Min, Max) ->
-    if
-	V =< Max andalso V >= Min ->
-	    {report_new_state(S, DI, V), ?ACNET_SUCCESS};
-
-	true -> {S, ?ACNET_INVARG}
-    end.
+set_dev(S, _, V, Min, _) when V < Min ->
+    { S, ?ACNET_INVARG };
+set_dev(S, _, V, _, Max) when V > Max ->
+    { S, ?ACNET_INVARG };
+set_dev(S, DI, V, _, _) ->
+    { report_new_state(S, DI, V), ?ACNET_SUCCESS }.
