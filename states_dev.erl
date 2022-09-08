@@ -183,7 +183,6 @@ message(S, #acnet_request{ref=RpyId, mult='true'} = Req) ->
     acnet:send_last_reply(RpyId, ?ACNET_BADREQ, <<>>),
     S;
 message(#mystate{table=Tid} = S, {'timeout', _, DI}) ->
-    %%info_msg("Transmitting ALIVE state.~n"),
     erlang:start_timer(5000, self(), DI),
     {_, Count} = read_value(Tid, DI),
     report_new_state(S, DI, (Count + 1) band 16#ffff);
