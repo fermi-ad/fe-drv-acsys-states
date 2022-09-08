@@ -17,13 +17,13 @@
 
 -import(error_logger, [info_msg/1, info_msg/2, warning_msg/2]).
 
--record(mystate, {table, socket, seq=0}).
+-record('mystate', {'table', 'socket', seq=0}).
 
 -spec update_status(ets:tid(), integer(), boolean()) -> 'true'.
 
 update_status(Tid, DI, State) ->
     case ets:lookup(Tid, DI) of
-	[] -> true;
+	[] -> 'true';
 	[{_, Val, _}] ->
 	    ets:insert(Tid, {DI, Val, State})
     end.
@@ -33,8 +33,8 @@ update_status(Tid, DI, State) ->
 update_value(Tid, DI, Val) ->
     case ets:lookup(Tid, DI) of
 	[] ->
-	    ets:insert(Tid, {DI, Val, true}),
-	    false;
+	    ets:insert(Tid, {DI, Val, 'true'}),
+	    'false';
 
 	[{_, _, State}] ->
 	    ets:insert(Tid, {DI, Val, State}),
@@ -60,14 +60,14 @@ read_value(Tid, DI) ->
 -spec get_alive_di() -> 'undefined' | integer().
 
 get_alive_di() ->
-    Param = states_alive_di,
-    case application:get_env(daq, Param) of
-	undefined ->
+    Param = 'states_alive_di',
+    case application:get_env('daq', Param) of
+	'undefined' ->
 	    warning_msg("STATES FRONT-END: No keep-alive states device "
 			"configured. To~nremove this warning, add the "
 			"parameter \"~p\" to the~n'daq' environment.~n",
 			[Param]),
-	    undefined;
+	    'undefined';
 
 	{ok, Val} ->
 	    if
@@ -80,7 +80,7 @@ get_alive_di() ->
 		    warning_msg("STATES FRONT-END: Bad keep-alive device "
 				"index specified. It~nshould be an integer "
 				"but instead was defined as:~n   ~p~n", [Val]),
-		    undefined
+		    'undefined'
 	    end
     end.
 
@@ -91,15 +91,15 @@ get_alive_di() ->
 report_new_state(#mystate{table=Tid, seq=Seq} = S, DI, Val) ->
     {MSec, Sec, USec} = os:timestamp(),
     case update_value(Tid, DI, Val) of
-	true ->
+	'true' ->
 	    Data = <<1:16/little, Seq:16/little, 1:32/little,
 		     0:16/little, DI:32/little, Val:16/little,
 		     (MSec * 1000000 + Sec):32/little,
 		     (USec * 1000):32/little>>,
-	    acnet:send_usm(fsmset, "STATES@STATES", Data),
+	    acnet:send_usm('fsmset', "STATES@STATES", Data),
 	    S#mystate{seq=(Seq + 1) band 16#ffff};
 
-	false ->
+	'false' ->
 	    S
     end.
 
@@ -116,36 +116,36 @@ devs(Bin) ->
 		  {'error', string()}.
 
 init(_) ->
-    {ok, S} = gen_udp:open(0),
+    {'ok', S} = gen_udp:open(0),
     try
-	acnet:start(fsmset, "FSMSET", "STATE"),
-	acnet:accept_requests(fsmset),
-	Tid = ets:new(stateDevTable, [set, private]),
-	Attrs = [#attr_spec{typ_elem='Int16', num_elem=1, name=state,
+	acnet:start('fsmset', "FSMSET", "STATE"),
+	acnet:accept_requests('fsmset'),
+	Tid = ets:new('stateDevTable', ['set', 'private']),
+	Attrs = [#attr_spec{typ_elem='Int16', num_elem=1, name='state',
 			    description= <<"Read/set a state device.">>},
-		 #attr_spec{typ_elem='Int16', num_elem=1, name=status,
+		 #attr_spec{typ_elem='Int16', num_elem=1, name='status',
 			    description= <<"Read/set a state device's status.">>}],
 	case get_alive_di() of
-	    undefined -> ok;
+	    'undefined' -> 'ok';
 	    DI ->
 		erlang:start_timer(5000, self(), DI),
 		update_value(Tid, DI, 0)
 	end,
-	{ready, #mystate{socket=S, table=Tid}, array:from_list(Attrs)}
+	{'ready', #mystate{socket=S, table=Tid}, array:from_list(Attrs)}
     catch
 	_:_ ->
 	    gen_udp:close(S),
-	    {error, "Error connecting to ACNET."}
+	    {'error', "Error connecting to ACNET."}
     end.
 
-bool_to_int(true) -> 1;
-bool_to_int(false) -> 0.
+bool_to_int('true') -> 1;
+bool_to_int('false') -> 0.
 
-reading(S, _, #reading_context{attribute=state, di=DI},
+reading(S, _, #reading_context{attribute='state', di=DI},
 	#sync_event{stamp=Stamp}) ->
     {Status, Data} = read_value(S#mystate.table, DI),
     {S, #device_reply{stamp=Stamp, data= <<Data:16/little>>, status=Status}};
-reading(S, _, #reading_context{attribute=status, di=DI},
+reading(S, _, #reading_context{attribute='status', di=DI},
 	#sync_event{stamp=Stamp}) ->
     {S, #device_reply{stamp=Stamp, status=?ACNET_SUCCESS,
 		      data=case ets:lookup(S#mystate.table, DI) of
@@ -156,9 +156,9 @@ reading(S, _, #reading_context{attribute=status, di=DI},
 			   end}}.
 
 setting(S, #setting_context{ssdn= <<_:32, Mn:16/little, Mx:16/little>>, di=DI,
-			    attribute=state}, <<V:16/little>>) ->
+			    attribute='state'}, <<V:16/little>>) ->
     set_dev(S, DI, V, Mn, Mx);
-setting(S, #setting_context{attribute=status, di=DI}, <<Val:16/little>>) ->
+setting(S, #setting_context{attribute='status', di=DI}, <<Val:16/little>>) ->
     update_status(S#mystate.table, DI, Val =:= 2),
     {S, ?ACNET_SUCCESS}.
 
@@ -171,18 +171,18 @@ terminate(#mystate{socket=Sock}) ->
 -spec message(#mystate{}, term()) -> #mystate{}.
 
 message(S, #acnet_request{data= <<10:16/little, Count:16/little, _Some:48,
-				  Rest/binary>>, ref=RpyId, mult=false})
+				  Rest/binary>>, ref=RpyId, mult='false'})
   when size(Rest) == Count * 6 ->
     acnet:send_last_reply(RpyId, ?ACNET_SUCCESS, <<>>),
     lists:foldl(fun ({DI, V}, Acc) ->
 			{NAcc, _} = set_dev(Acc, DI, V, -16#8000, 16#7fff),
 			NAcc
 		end, S, devs(Rest));
-message(S, #acnet_request{ref=RpyId, mult=true} = Req) ->
+message(S, #acnet_request{ref=RpyId, mult='true'} = Req) ->
     info_msg("FSMSET Bad request: ~p.~n", [Req]),
     acnet:send_last_reply(RpyId, ?ACNET_BADREQ, <<>>),
     S;
-message(#mystate{table=Tid} = S, {timeout, _, DI}) ->
+message(#mystate{table=Tid} = S, {'timeout', _, DI}) ->
     %%info_msg("Transmitting ALIVE state.~n"),
     erlang:start_timer(5000, self(), DI),
     {_, Count} = read_value(Tid, DI),
