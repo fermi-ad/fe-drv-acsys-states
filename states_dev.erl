@@ -125,8 +125,8 @@ init(_) ->
 	case get_alive_di() of
 	    'undefined' -> 'ok';
 	    DI ->
-		erlang:start_timer(5000, self(), DI),
-		update_value(Tid, DI, 0)
+		update_value(Tid, DI, 0),
+		timer:send_interval(5000, {'timeout', DI})
 	end,
 	{'ready', #mystate{socket=S, table=Tid}, array:from_list(Attrs)}
     catch
@@ -179,8 +179,7 @@ message(S, #acnet_request{ref=RpyId, mult='true'} = Req) ->
     info_msg("FSMSET Bad request: ~p.~n", [Req]),
     acnet:send_last_reply(RpyId, ?ACNET_BADREQ, <<>>),
     S;
-message(#mystate{table=Tid} = S, {'timeout', _, DI}) ->
-    erlang:start_timer(5000, self(), DI),
+message(#mystate{table=Tid} = S, {'timeout', DI}) ->
     {_, Count} = read_value(Tid, DI),
     report_new_state(S, DI, (Count + 1) band 16#ffff);
 message(S, #acnet_request{ref=RpyId} = Req) ->
