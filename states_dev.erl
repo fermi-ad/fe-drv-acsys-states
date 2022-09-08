@@ -165,11 +165,10 @@ init(_) ->
 	    {'error', "Error connecting to ACNET."}
     end.
 
-%%% Local helper function to conevrt a boolean to an integer (Erlang
-%%% doesn't define this conversion in the language.)
+%%% Local helper function to conevrt a boolean to a 16-bit binary.
 
-bool_to_int('true') -> 1;
-bool_to_int('false') -> 0.
+bool_to_bin('true') -> <<1:16/little>>;
+bool_to_bin('false') -> <<0:16/little>>.
 
 %%% This function is called by the framework when reading the `state`
 %%% attribute.
@@ -192,9 +191,8 @@ reading(S, _, #reading_context{attribute='state', di=DI},
 
 reading(S, _, #reading_context{attribute='status', di=DI},
 	#sync_event{stamp=Stamp}) ->
-    Value = read_state(S#mystate.table, DI),
     {S, #device_reply{stamp=Stamp, status=?ACNET_SUCCESS,
-		      data= <<(bool_to_int(Value)):16/little>>}}.
+		      data=bool_to_bin(read_state(S#mystate.table, DI))}}.
 
 %%% This function is called when handling setting requests in the
 %%% framework for the `state` attribute.
