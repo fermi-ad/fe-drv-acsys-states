@@ -98,18 +98,74 @@ get_alive_di() ->
 	    'undefined'
     end.
 
+%%% Builds the header of the STATES multicast. The only variable part
+%%% that we're filling is the sequence number. I don't think any
+%%% clients look at the other fields, besides the "STATES " identifier
+%%% (really, Joshel? We need to report the *previous* packet's
+%%% length?)
+
+build_mc_header(Seq) ->
+    <<
+      %% Start the `ipheader_t` portion.
+
+      16#100:16,
+      20:16,
+      2:16,
+      1:16,
+      "STATES  ",
+      1:16,
+      0:16,
+
+      %% Start the `mcheader_t` portion.
+
+      16#100:16,
+      32:16,
+      Seq:32,
+      0:16,
+      0:16
+    >>.
+
+%%% Builds a data packet containing information about a state device
+%%% update. The format of this packet is the one expected for a raw,
+%%% UDP multicast.
+
+build_mc_packet(Seq, TS, List) ->
+    %% Build the section of binary that holds the array of state
+    %% device information.
+
+    DeviceInfo = <<
+		   <<31:16,
+		     DI:32/unsigned,
+		     Value:16/unsigned,
+		     (TS div 1000000000):32,
+		     (TS rem 1000000000):32>> || {DI, Value} <- List
+		 >>,
+
+    %% Build a binary containing the size of the array. Since the data
+    %% is a multiple of 16, we can use the size of the data to get the
+    %% length instead of iterating across the list again.
+
+    Len = <<(size(DeviceInfo) div 16):32/unsigned>>,
+
+    %% Assemble the pieces into an iolist() for sending out.
+
+    [build_mc_header(Seq), Len, DeviceInfo].
+
 %%% Multicast a STATES protocol message.
 
 -spec report_new_state(dev_state(), integer(), integer()) -> dev_state().
 
-report_new_state(#dev_state{table=Tid, seq=Seq} = S, DI, Val) ->
-    {MSec, Sec, USec} = os:timestamp(),
+report_new_state(#dev_state{table=Tid, seq=Seq, socket=Sock} = S, DI, Val) ->
+    TS = erlang:system_time('nanosecond'),
     case update_value(Tid, DI, Val) of
 	'true' ->
 	    Data = <<1:16/little, Seq:16/little, 1:32/little,
 		     0:16/little, DI:32/little, Val:16/little,
-		     (MSec * 1000000 + Sec):32/little,
-		     (USec * 1000):32/little>>,
+		     (TS div 1000000000):32/little,
+		     (TS rem 1000000000):32/little>>,
+	    gen_udp:send(Sock,
+			 {{239, 128, 1, 5}, 50090},
+			 build_mc_packet(Seq, TS, [{DI, Val}])),
 	    acnet:send_usm('fsmset', "STATES@STATES", Data),
 	    S#dev_state{seq=(Seq + 1) band 16#ffff};
 
