@@ -17,7 +17,16 @@
 
 -import(error_logger, [info_msg/1, info_msg/2, warning_msg/2]).
 
--record('mystate', {'table', 'socket', seq=0}).
+-record(dev_state, {'table', 'socket', seq=0}).
+
+-type dev_state() :: #dev_state{table :: ets:table(),
+				socket :: gen_udp:socket(),
+				seq :: pos_integer()}.
+
+%%% ----------------------------------------------------------------
+%%% The functions in this section are responsible for querying and
+%%% updating the state device table.
+%%% ----------------------------------------------------------------
 
 -spec update_status(ets:tid(), integer(), boolean()) -> 'true'.
 
@@ -91,9 +100,9 @@ get_alive_di() ->
 
 %%% Multicast a STATES protocol message.
 
--spec report_new_state(#mystate{}, integer(), integer()) -> #mystate{}.
+-spec report_new_state(dev_state(), integer(), integer()) -> dev_state().
 
-report_new_state(#mystate{table=Tid, seq=Seq} = S, DI, Val) ->
+report_new_state(#dev_state{table=Tid, seq=Seq} = S, DI, Val) ->
     {MSec, Sec, USec} = os:timestamp(),
     case update_value(Tid, DI, Val) of
 	'true' ->
@@ -102,7 +111,7 @@ report_new_state(#mystate{table=Tid, seq=Seq} = S, DI, Val) ->
 		     (MSec * 1000000 + Sec):32/little,
 		     (USec * 1000):32/little>>,
 	    acnet:send_usm('fsmset', "STATES@STATES", Data),
-	    S#mystate{seq=(Seq + 1) band 16#ffff};
+	    S#dev_state{seq=(Seq + 1) band 16#ffff};
 
 	'false' ->
 	    S
@@ -113,13 +122,14 @@ report_new_state(#mystate{table=Tid, seq=Seq} = S, DI, Val) ->
 devs(Bin) ->
     [{DI, V} || <<DI:32/little, V:16/little>> <= Bin].
 
-%%% ===========================================================================
+%%% ----------------------------------------------------------------
 %%% This section defines the 'driver' behavior interface.
+%%% ----------------------------------------------------------------
 
 %%% Initialize the driver's state and the resources it uses.
 
 -spec init(any()) ->
-		  {'ready', #mystate{}, array:array()} |
+		  {'ready', dev_state(), array:array()} |
 		  {'error', string()}.
 
 init(_) ->
@@ -158,7 +168,7 @@ init(_) ->
 
 	%% Return a success result to the framework.
 
-	{'ready', #mystate{socket=S, table=Tid}, array:from_list(Attrs)}
+	{'ready', #dev_state{socket=S, table=Tid}, array:from_list(Attrs)}
     catch
 	_:_ ->
 	    gen_udp:close(S),
@@ -173,13 +183,13 @@ bool_to_bin('false') -> <<0:16/little>>.
 %%% This function is called by the framework when reading the `state`
 %%% attribute.
 
-reading(S, _, #reading_context{attribute='state', di=DI},
+reading(#dev_state{table=Table} = S, _, #reading_context{attribute='state', di=DI},
 	#sync_event{stamp=Stamp}) ->
 
     %% Retrieve the value associated with the given device index along
     %% with the result status of the look-up.
 
-    {Status, Data} = read_value(S#mystate.table, DI),
+    {Status, Data} = read_value(Table, DI),
 
     %% Return our state (it wasn't updated) along with the reply
     %% record for the request.
@@ -189,10 +199,10 @@ reading(S, _, #reading_context{attribute='state', di=DI},
 %%% This function is executed when the framework wants to read the
 %%% `status` attribute.
 
-reading(S, _, #reading_context{attribute='status', di=DI},
+reading(#dev_state{table=Table} = S, _, #reading_context{attribute='status', di=DI},
 	#sync_event{stamp=Stamp}) ->
     {S, #device_reply{stamp=Stamp, status=?ACNET_SUCCESS,
-		      data=bool_to_bin(read_state(S#mystate.table, DI))}}.
+		      data=bool_to_bin(read_state(Table, DI))}}.
 
 %%% This function is called when handling setting requests in the
 %%% framework for the `state` attribute.
@@ -204,21 +214,22 @@ setting(S, #setting_context{ssdn= <<_:32, Mn:16/little, Mx:16/little>>, di=DI,
 %%% This function is called when handling setting requests in the
 %%% framework for the `status` attribute.
 
-setting(S, #setting_context{attribute='status', di=DI}, <<Val:16/little>>) ->
+setting(#dev_state{table=Table} = S, #setting_context{attribute='status', di=DI},
+	<<Val:16/little>>) ->
 
     %% Update the enable/disable state of the device. If the settings
     %% is 2, the device gets enabled. Otherwise it's disabled.
 
-    update_status(S#mystate.table, DI, Val =:= 2),
+    update_status(Table, DI, Val =:= 2),
     {S, ?ACNET_SUCCESS}.
 
-terminate(#mystate{socket=Sock}) ->
+terminate(#dev_state{socket=Sock}) ->
     gen_udp:close(Sock).
 
 %%% This callback handles miscellaneous messages that we configured to
 %%% be sent to us.
 
--spec message(#mystate{}, term()) -> #mystate{}.
+-spec message(dev_state(), term()) -> dev_state().
 
 message(S, #acnet_request{data= <<10:16/little, Count:16/little, _Some:48,
 				  Rest/binary>>, ref=RpyId, mult='false'})
@@ -229,7 +240,7 @@ message(S, #acnet_request{data= <<10:16/little, Count:16/little, _Some:48,
 			NAcc
 		end, S, devs(Rest));
 
-%%% No FSMSET request needs multiple replies. Return a BAD REQUEST
+%%% No FSMSET request need multiple replies. Return a BAD REQUEST
 %%% status.
 
 message(S, #acnet_request{ref=RpyId, mult='true'} = Req) ->
@@ -240,7 +251,7 @@ message(S, #acnet_request{ref=RpyId, mult='true'} = Req) ->
 %%% If we get a timeout message, it's time to send out the "keep
 %%% alive" state.
 
-message(#mystate{table=Tid} = S, {'timeout', DI}) ->
+message(#dev_state{table=Tid} = S, {'timeout', DI}) ->
     {_, Count} = read_value(Tid, DI),
     report_new_state(S, DI, (Count + 1) band 16#ffff);
 
@@ -251,8 +262,8 @@ message(S, #acnet_request{ref=RpyId} = Req) ->
     acnet:send_last_reply(RpyId, ?ACNET_SYS, <<>>),
     S.
 
--spec set_dev(#mystate{}, integer(), integer(), integer(), integer()) ->
-		     {#mystate{}, acnet:status()}.
+-spec set_dev(dev_state(), integer(), integer(), integer(), integer()) ->
+		     {dev_state(), acnet:status()}.
 
 set_dev(S, _, V, Min, _) when V < Min ->
     { S, ?ACNET_INVARG };
