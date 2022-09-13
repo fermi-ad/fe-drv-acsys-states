@@ -1,5 +1,3 @@
-%%% $Id: states_dev.erl,v 1.6 2012/06/15 20:32:50 neswold Exp $
-
 %%% States Front-end Driver
 %%%
 %%% This device driver implements a stripped down STATES facility
