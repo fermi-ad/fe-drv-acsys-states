@@ -218,7 +218,8 @@ init(_) ->
 	    'undefined' -> 'ok';
 	    DI ->
 		update_value(Tid, DI, 0),
-		timer:send_interval(5000, {'timeout', DI})
+		timer:send_interval(5000, {'timeout', DI}),
+		info_msg("timer configured for keep-alive", [])
 	end,
 
 	%% Return a success result to the framework.
@@ -238,13 +239,14 @@ bool_to_bin('false') -> <<0:16/little>>.
 %%% This function is called by the framework when reading the `state`
 %%% attribute.
 
-reading(#dev_state{table=Table} = S, _, #reading_context{attribute='state', di=DI},
+reading(#dev_state{table=Table} = S, _,
+	#reading_context{attribute='state', di=DI},
 	#sync_event{stamp=Stamp}) ->
-
     %% Retrieve the value associated with the given device index along
     %% with the result status of the look-up.
 
     {Status, Data} = read_value(Table, DI),
+    info_msg("read request for state device ~p (value: ~p)", [DI, Data]),
 
     %% Return our state (it wasn't updated) along with the reply
     %% record for the request.
@@ -256,8 +258,11 @@ reading(#dev_state{table=Table} = S, _, #reading_context{attribute='state', di=D
 
 reading(#dev_state{table=Table} = S, _, #reading_context{attribute='status', di=DI},
 	#sync_event{stamp=Stamp}) ->
+    Value = read_state(Table, DI),
+    info_msg("status request for state device ~p (value: ~p)", [DI, Value]),
+
     {S, #device_reply{stamp=Stamp, status=?ACNET_SUCCESS,
-		      data=bool_to_bin(read_state(Table, DI))}}.
+		      data=bool_to_bin(Value)}}.
 
 %%% This function is called when handling setting requests in the
 %%% framework for the `state` attribute.
@@ -299,7 +304,7 @@ message(S, #acnet_request{data= <<10:16/little, Count:16/little, _Some:48,
 %%% status.
 
 message(S, #acnet_request{ref=RpyId, mult='true'} = Req) ->
-    info_msg("FSMSET Bad request: ~p.~n", [Req]),
+    warning_msg("FSMSET Bad request: ~p.~n", [Req]),
     acnet:send_last_reply(RpyId, ?ACNET_BADREQ, <<>>),
     S;
 
@@ -313,7 +318,7 @@ message(#dev_state{table=Tid} = S, {'timeout', DI}) ->
 %%% Report any other type of request.
 
 message(S, #acnet_request{ref=RpyId} = Req) ->
-    info_msg("FSMSET Unhandled request: ~p.~n", [Req]),
+    warning_msg("FSMSET Unhandled request: ~p.~n", [Req]),
     acnet:send_last_reply(RpyId, ?ACNET_SYS, <<>>),
     S.
 
