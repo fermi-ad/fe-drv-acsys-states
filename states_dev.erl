@@ -162,7 +162,8 @@ report_new_state(#dev_state{table=Tid, seq=Seq, socket=Sock} = S, DI, Val) ->
 		     (TS div 1000000000):32/little,
 		     (TS rem 1000000000):32/little>>,
 	    gen_udp:send(Sock,
-			 {{239, 128, 1, 5}, 50090},
+			 {239, 128, 1, 5},
+			 50090,
 			 build_mc_packet(Seq, TS, [{DI, Val}])),
 	    acnet:send_usm('fsmset', "STATES@STATES", Data),
 	    S#dev_state{seq=(Seq + 1) band 16#ffff};
