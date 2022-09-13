@@ -26,13 +26,13 @@
 %%% updating the state device table.
 %%% ----------------------------------------------------------------
 
--spec update_status(ets:tid(), integer(), boolean()) -> 'true'.
+-spec update_status(ets:tid(), integer(), boolean()) -> 'ok'.
 
 update_status(Tid, DI, State) ->
     case ets:lookup(Tid, DI) of
-	[] -> 'true';
-	[{_, Val, _}] ->
-	    ets:insert(Tid, {DI, Val, State})
+	[{_, Val, Old}] when Old /= State ->
+	    ets:insert(Tid, {DI, Val, State});
+	_ -> 'ok'
     end.
 
 -spec update_value(ets:tid(), integer(), integer()) -> boolean().
