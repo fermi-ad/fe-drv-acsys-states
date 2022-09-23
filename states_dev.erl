@@ -11,7 +11,8 @@
 
 -include_lib("daq/include/devices.hrl").
 
--export([init/1, message/2, reading/4, setting/3, terminate/1]).
+-export([init/1, message/2, reading/4, setting/3, terminate/1,
+	 set_state/2]).
 
 -import(error_logger, [info_msg/1, info_msg/2, warning_msg/2]).
 
@@ -148,6 +149,11 @@ build_mc_packet(Seq, TS, List) ->
     %% Assemble the pieces into an iolist() for sending out.
 
     [build_mc_header(Seq), Len, DeviceInfo].
+
+set_state(DI, Value)
+  when is_integer(DI) andalso Value >= 0 andalso Value < 65536 ->
+    Driver = devices:lookupOid(100),
+    Driver ! {'set_state', DI, Value}.
 
 %%% Multicast a STATES protocol message.
 
@@ -307,6 +313,10 @@ message(S, #acnet_request{ref=RpyId, mult='true'} = Req) ->
     warning_msg("FSMSET Bad request: ~p.~n", [Req]),
     acnet:send_last_reply(RpyId, ?ACNET_BADREQ, <<>>),
     S;
+
+message(#dev_state{} = S, {'set_state', DI, Val}) ->
+    info_msg("local state change: ~p <- ~p", [DI, Val]),
+    report_new_state(S, DI, Val);
 
 %%% If we get a timeout message, it's time to send out the "keep
 %%% alive" state.
