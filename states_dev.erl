@@ -262,7 +262,6 @@ reading(#dev_state{table=Table} = S, _,
     %% with the result status of the look-up.
 
     {Status, Data} = read_value(Table, DI),
-    info_msg("read request for state device ~p (value: ~p)", [DI, Data]),
 
     %% Return our state (it wasn't updated) along with the reply
     %% record for the request.
@@ -275,7 +274,6 @@ reading(#dev_state{table=Table} = S, _,
 reading(#dev_state{table=Table} = S, _, #reading_context{attribute='status', di=DI},
 	#sync_event{stamp=Stamp}) ->
     Value = read_state(Table, DI),
-    info_msg("status request for state device ~p (value: ~p)", [DI, Value]),
 
     {S, #device_reply{stamp=Stamp, status=?ACNET_SUCCESS,
 		      data=bool_to_bin(Value)}}.
