@@ -336,8 +336,11 @@ message(#dev_state{table=Tid} = S, {'timeout', DI}) ->
 %%% Report any other type of request.
 
 message(S, #acnet_request{ref=RpyId} = Req) ->
-    warning_msg("FSMSET Unhandled request: ~p.~n", [Req]),
+    warning_msg("FSMSET Unhandled request: ~p", [Req]),
     acnet:send_last_reply(RpyId, ?ACNET_SYS, <<>>),
+    S;
+
+message(S, _Msg) ->
     S.
 
 -spec set_dev(dev_state(), integer(), integer(), integer(), integer()) ->
