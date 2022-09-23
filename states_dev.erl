@@ -163,15 +163,25 @@ report_new_state(#dev_state{table=Tid, seq=Seq, socket=Sock} = S, DI, Val) ->
     TS = erlang:system_time('nanosecond'),
     case update_value(Tid, DI, Val) of
 	'true' ->
+	    %% Send the state update over the UDP multicast socket.
+
+	    'ok' = gen_udp:send(Sock,
+				{239, 128, 1, 1},
+				50090,
+				build_mc_packet(Seq, TS, [{DI, Val}])),
+
+	    %% Send the state update over the ACNET STATES@STATES
+	    %% handle.
+
 	    Data = <<1:16/little, Seq:16/little, 1:32/little,
 		     0:16/little, DI:32/little, Val:16/little,
 		     (TS div 1000000000):32/little,
 		     (TS rem 1000000000):32/little>>,
-	    gen_udp:send(Sock,
-			 {239, 128, 1, 5},
-			 50090,
-			 build_mc_packet(Seq, TS, [{DI, Val}])),
-	    acnet:send_usm('fsmset', "STATES@STATES", Data),
+	    'ok' = acnet:send_usm('fsmset', "STATES@STATES", Data),
+
+	    %% Return updated driver state (by bumping up the sequence
+	    %% number.)
+
 	    S#dev_state{seq=(Seq + 1) band 16#ffff};
 
 	'false' ->
