@@ -213,7 +213,7 @@ init(_) ->
 	%% Create the FSMSET handle and enable it for receiving
 	%% requests.
 
-	acnet:start('fsmset', "FSMSET", "STATE"),
+	acnet:start('fsmset', "FSMSET"),
 	acnet:accept_requests('fsmset'),
 
 	%% Create the table that will hold the state of the state
