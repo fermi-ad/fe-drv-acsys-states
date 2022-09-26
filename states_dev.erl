@@ -185,6 +185,9 @@ report_new_state(#dev_state{table=Tid, seq=Seq, socket=Sock} = S, DI, Val) ->
 	    S#dev_state{seq=(Seq + 1) band 16#ffff};
 
 	'false' ->
+	    info_msg("Setting initial value for DI ~p to ~p.~n"
+		     "This will not be multicast since it may be due to `dnldd`.",
+		     [DI, Val]),
 	    S
     end.
 
