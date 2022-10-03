@@ -81,19 +81,19 @@ get_alive_di() ->
 	'undefined' ->
 	    warning_msg("STATES FRONT-END: No keep-alive states device "
 			"configured. To~nremove this warning, add the "
-			"parameter \"~p\" to the~n'daq' environment.~n",
+			"parameter \"~p\" to the~n'daq' environment.",
 			[Param]),
 	    'undefined';
 
 	{'ok', Val} when is_integer(Val) ->
 	    info_msg("STATES FRONT-END: Using ~B as the keep-alive "
-		     "state device index.~n", [Val]),
+		     "state device index.", [Val]),
 	    Val;
 
 	{'ok', Val} ->
 	    warning_msg("STATES FRONT-END: Bad keep-alive device "
 			"index specified. It~nshould be an integer "
-			"but instead was defined as:~n   ~p~n", [Val]),
+			"but instead was defined as:~n   ~p", [Val]),
 	    'undefined'
     end.
 
@@ -321,7 +321,7 @@ message(S, #acnet_request{data= <<10:16/little, Count:16/little, _Some:48,
 %%% status.
 
 message(S, #acnet_request{ref=RpyId, mult='true'} = Req) ->
-    warning_msg("FSMSET Bad request: ~p.~n", [Req]),
+    warning_msg("FSMSET Bad request: ~p.", [Req]),
     acnet:send_last_reply(RpyId, ?ACNET_BADREQ, <<>>),
     S;
 
