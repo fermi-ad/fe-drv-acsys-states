@@ -196,6 +196,14 @@ report_new_state(#dev_state{table=Tid, seq=Seq, socket=Sock} = S, DI, Val) ->
 devs(Bin) ->
     [{DI, V} || <<DI:32/little, V:16/little>> <= Bin].
 
+-spec update_devices(dev_state(), binary()) -> dev_state().
+
+update_devices(S, Data) ->
+    lists:foldl(fun ({DI, V}, Acc) ->
+			{NAcc, _} = set_dev(Acc, DI, V, -16#8000, 16#7fff),
+			NAcc
+		end, S, devs(Data)).
+
 %%% ----------------------------------------------------------------
 %%% This section defines the 'driver' behavior interface.
 %%% ----------------------------------------------------------------
@@ -311,19 +319,13 @@ terminate(#dev_state{socket=Sock}) ->
 message(S, #acnet_usm{data= <<10:16/little, Count:16/little, _Some:48,
 			      Rest/binary>>})
   when size(Rest) == Count * 6 ->
-    lists:foldl(fun ({DI, V}, Acc) ->
-			{NAcc, _} = set_dev(Acc, DI, V, -16#8000, 16#7fff),
-			NAcc
-		end, S, devs(Rest));
+    update_devices(S, Rest);
 
 message(S, #acnet_request{data= <<10:16/little, Count:16/little, _Some:48,
 				  Rest/binary>>, ref=RpyId, mult='false'})
   when size(Rest) == Count * 6 ->
     acnet:send_last_reply(RpyId, ?ACNET_SUCCESS, <<>>),
-    lists:foldl(fun ({DI, V}, Acc) ->
-			{NAcc, _} = set_dev(Acc, DI, V, -16#8000, 16#7fff),
-			NAcc
-		end, S, devs(Rest));
+    update_devices(S, Rest);
 
 %%% No FSMSET request need multiple replies. Return a BAD REQUEST
 %%% status.
