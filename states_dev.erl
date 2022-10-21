@@ -308,6 +308,14 @@ terminate(#dev_state{socket=Sock}) ->
 
 -spec message(dev_state(), term()) -> dev_state().
 
+message(S, #acnet_usm{data= <<10:16/little, Count:16/little, _Some:48,
+			      Rest/binary>>})
+  when size(Rest) == Count * 6 ->
+    lists:foldl(fun ({DI, V}, Acc) ->
+			{NAcc, _} = set_dev(Acc, DI, V, -16#8000, 16#7fff),
+			NAcc
+		end, S, devs(Rest));
+
 message(S, #acnet_request{data= <<10:16/little, Count:16/little, _Some:48,
 				  Rest/binary>>, ref=RpyId, mult='false'})
   when size(Rest) == Count * 6 ->
