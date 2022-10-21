@@ -196,13 +196,48 @@ report_new_state(#dev_state{table=Tid, seq=Seq, socket=Sock} = S, DI, Val) ->
 devs(Bin) ->
     [{DI, V} || <<DI:32/little, V:16/little>> <= Bin].
 
--spec update_devices(dev_state(), binary()) -> dev_state().
+%%% Takes data from an FSMSET request, validates, and updates
+%%% coresponding state devices.
 
-update_devices(S, Data) ->
-    lists:foldl(fun ({DI, V}, Acc) ->
-			{NAcc, _} = set_dev(Acc, DI, V, -16#8000, 16#7fff),
-			NAcc
-		end, S, devs(Data)).
+-spec update_devices(dev_state(), non_neg_integer(), binary()) ->
+			    dev_state().
+
+update_devices(S, Count, Data) ->
+    ExpectedSize = Count * 6,
+    if
+	%% If the size of the packet matches the count, then the
+	%% client gave us a good packet.
+
+	size(Data) == ExpectedSize ->
+	    lists:foldl(fun ({DI, V}, Acc) ->
+				{NAcc, _} = set_dev(Acc, DI, V,
+						    -16#8000,
+						    16#7fff),
+				NAcc
+			end, S, devs(Data));
+
+	%% The client gave us a bad packet. In this case, the packet
+	%% was bigger than the expected payload (i.e. the Count is too
+	%% small.) We'll assume the Count was correct and the client
+	%% implementation was sloppy and sends the full buffer
+	%% every time.
+
+	size(Data) > ExpectedSize ->
+	    warning_msg("FSMSET packet poorly formed: reports ~p state device~n"
+			"but there's room for ~p devices.",
+			[Count, size(Data) div 6]),
+	    <<ValidPortion:ExpectedSize/binary, _/binary>> = Data,
+	    update_devices(S, Count, ValidPortion);
+
+	%% If the buffer is too small for the reported size of the
+	%% payload, drop it.
+
+	size(Data) < ExpectedSize ->
+	    warning_msg("FSMSET packet is ignored: reports ~p state device~n"
+			"but buffer is only ~p bytes. It must be at least ~p bytes.",
+			[Count, size(Data), ExpectedSize]),
+	    S
+    end.
 
 %%% ----------------------------------------------------------------
 %%% This section defines the 'driver' behavior interface.
@@ -317,15 +352,13 @@ terminate(#dev_state{socket=Sock}) ->
 -spec message(dev_state(), term()) -> dev_state().
 
 message(S, #acnet_usm{data= <<10:16/little, Count:16/little, _Some:48,
-			      Rest/binary>>})
-  when size(Rest) == Count * 6 ->
-    update_devices(S, Rest);
+			      Rest/binary>>}) ->
+    update_devices(S, Count, Rest);
 
 message(S, #acnet_request{data= <<10:16/little, Count:16/little, _Some:48,
-				  Rest/binary>>, ref=RpyId, mult='false'})
-  when size(Rest) == Count * 6 ->
+				  Rest/binary>>, ref=RpyId, mult='false'}) ->
     acnet:send_last_reply(RpyId, ?ACNET_SUCCESS, <<>>),
-    update_devices(S, Rest);
+    update_devices(S, Count, Rest);
 
 %%% No FSMSET request need multiple replies. Return a BAD REQUEST
 %%% status.
