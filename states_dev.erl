@@ -390,9 +390,13 @@ message(S, _Msg) ->
 -spec set_dev(dev_state(), integer(), integer(), integer(), integer()) ->
 		     {dev_state(), acnet:status()}.
 
-set_dev(S, _, V, Min, _) when V < Min ->
+set_dev(S, DI, V, Min, _) when V < Min ->
+    warning_msg("Rejected state update for ~p : value ~p < ~p",
+		[DI, V, Min]),
     { S, ?ACNET_INVARG };
-set_dev(S, _, V, _, Max) when V > Max ->
+set_dev(S, DI, V, _, Max) when V > Max ->
+    warning_msg("Rejected state update for ~p : value ~p > ~p",
+		[DI, V, Max]),
     { S, ?ACNET_INVARG };
 set_dev(S, DI, V, _, _) ->
     { report_new_state(S, DI, V), ?ACNET_SUCCESS }.
