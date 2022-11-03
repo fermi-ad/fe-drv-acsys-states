@@ -199,10 +199,10 @@ devs(Bin) ->
 %%% Takes data from an FSMSET request, validates, and updates
 %%% coresponding state devices.
 
--spec update_devices(dev_state(), non_neg_integer(), binary()) ->
-			    dev_state().
+-spec update_devices(dev_state(), acnet:address(), non_neg_integer(),
+		     binary()) -> dev_state().
 
-update_devices(S, Count, Data) ->
+update_devices(S, Src, Count, Data) ->
     ExpectedSize = Count * 6,
     if
 	%% If the size of the packet matches the count, then the
@@ -223,19 +223,16 @@ update_devices(S, Count, Data) ->
 	%% every time.
 
 	size(Data) > ExpectedSize ->
-	    warning_msg("FSMSET packet poorly formed: reports ~p state device~n"
-			"but there's room for ~p devices.",
-			[Count, size(Data) div 6]),
 	    <<ValidPortion:ExpectedSize/binary, _/binary>> = Data,
-	    update_devices(S, Count, ValidPortion);
+	    update_devices(S, Src, Count, ValidPortion);
 
 	%% If the buffer is too small for the reported size of the
 	%% payload, drop it.
 
 	size(Data) < ExpectedSize ->
-	    warning_msg("FSMSET packet is ignored: reports ~p state device~n"
+	    warning_msg("FSMSET packet from ~p is ignored: reports ~p state device~n"
 			"but buffer is only ~p bytes. It must be at least ~p bytes.",
-			[Count, size(Data), ExpectedSize]),
+			[Src, Count, size(Data), ExpectedSize]),
 	    S
     end.
 
@@ -353,12 +350,13 @@ terminate(#dev_state{socket=Sock}) ->
 
 message(S, #acnet_usm{data= <<10:16/little, Count:16/little, _Some:48,
 			      Rest/binary>>}) ->
-    update_devices(S, Count, Rest);
+    update_devices(S, 'unknown', Count, Rest);
 
 message(S, #acnet_request{data= <<10:16/little, Count:16/little, _Some:48,
-				  Rest/binary>>, ref=RpyId, mult='false'}) ->
+				  Rest/binary>>,
+			  ref=RpyId, mult='false', src=Src}) ->
     acnet:send_last_reply(RpyId, ?ACNET_SUCCESS, <<>>),
-    update_devices(S, Count, Rest);
+    update_devices(S, Src, Count, Rest);
 
 %%% No FSMSET request need multiple replies. Return a BAD REQUEST
 %%% status.
