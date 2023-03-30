@@ -6,7 +6,7 @@
 %%% a setting. If necessary, we can add the other complexity.
 
 -module(states_dev).
--vsn(1).
+-vsn(2).
 -behavior(driver).
 
 -include_lib("daq/include/devices.hrl").
@@ -174,7 +174,7 @@ report_new_state(#dev_state{table=Tid, seq=Seq, socket=Sock} = S, DI, Val) ->
 	    %% handle.
 
 	    Data = <<1:16/little, Seq:16/little, 1:32/little,
-		     0:16/little, DI:32/little, Val:16/little,
+		     31:16/little, DI:32/little, Val:16/little,
 		     (TS div 1000000000):32/little,
 		     (TS rem 1000000000):32/little>>,
 	    'ok' = acnet:send_usm('fsmset', "STATES@STATES", Data),
