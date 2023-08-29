@@ -200,12 +200,19 @@ devs(Bin) ->
 %%% packet.
 
 handle_fsm_entry({DI, V}, Acc) ->
-    case set_dev(Acc, DI, V, -16#8000, 16#7fff) of
-	{NAcc, ?ACNET_SUCCESS} ->
-	    NAcc;
-	{NAcc, _} ->
-	    NAcc
-    end.
+    {NAcc, Status} = set_dev(Acc, DI, V, -16#8000, 16#7fff),
+
+    %% If the update was successful, forward it to SYBSET.
+
+    Status == ?ACNET_SUCCESS andalso
+	begin
+	    Setting = #device_setting{di=DI, pi=13, length= 2, offset= 0,
+				      ssdn= <<0:32, -16#8000:16/little,
+					      16#7fff:16/little>>,
+				      data= <<V:16/little>>},
+	    settings_forward:queue_forward(Setting)
+	end,
+    NAcc.
 
 %%% Takes data from an FSMSET request, validates, and updates
 %%% coresponding state devices.
