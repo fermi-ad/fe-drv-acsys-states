@@ -207,7 +207,7 @@ handle_fsm_entry({DI, V}, Acc) ->
     Status == ?ACNET_SUCCESS andalso
 	begin
 	    Setting = #device_setting{di=DI, pi=13, length= 2, offset= 0,
-				      ssdn= <<0:32, -16#8000:16/little,
+				      ssdn= <<100, 0, 0, 0, -16#8000:16/little,
 					      16#7fff:16/little>>,
 				      data= <<V:16/little>>},
 	    settings_forward:queue_forward(Setting)
