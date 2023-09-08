@@ -196,6 +196,24 @@ report_new_state(#dev_state{table=Tid, seq=Seq, socket=Sock} = S, DI, Val) ->
 devs(Bin) ->
     [{DI, V} || <<DI:32/little, V:16/little>> <= Bin].
 
+%%% Used in `update_devices` to process each entry in an FSMSET
+%%% packet.
+
+handle_fsm_entry({DI, V}, Acc) ->
+    {NAcc, Status} = set_dev(Acc, DI, V, -16#8000, 16#7fff),
+
+    %% If the update was successful, forward it to SYBSET.
+
+    Status == ?ACNET_SUCCESS andalso
+	begin
+	    Setting = #device_setting{di=DI, pi=13, length= 2, offset= 0,
+				      ssdn= <<100, 0, 0, 0, -16#8000:16/little,
+					      16#7fff:16/little>>,
+				      data= <<V:16/little>>},
+	    settings_forward:queue_forward(Setting)
+	end,
+    NAcc.
+
 %%% Takes data from an FSMSET request, validates, and updates
 %%% coresponding state devices.
 
@@ -209,12 +227,7 @@ update_devices(S, Src, Count, Data) ->
 	%% client gave us a good packet.
 
 	size(Data) == ExpectedSize ->
-	    lists:foldl(fun ({DI, V}, Acc) ->
-				{NAcc, _} = set_dev(Acc, DI, V,
-						    -16#8000,
-						    16#7fff),
-				NAcc
-			end, S, devs(Data));
+	    lists:foldl(fun handle_fsm_entry/2, S, devs(Data));
 
 	%% The client gave us a bad packet. In this case, the packet
 	%% was bigger than the expected payload (i.e. the Count is too
